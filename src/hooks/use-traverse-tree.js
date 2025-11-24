@@ -21,7 +21,6 @@ const useTraverseTree = () => {
     const deleteNode = function (tree, nodeId) {
       if (!tree.items) return tree;
   
-      // Filter out the node that matches
       const filteredItems = tree.items
         .filter(item => item.id !== nodeId)
         .map(item => deleteNode(item, nodeId));

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 /**
- * Folder component
+ * Folder component (folders first)
  *
  * Props:
  * - explorer: the node { id, name, isFolder, items }
@@ -9,15 +9,6 @@ import { useEffect, useState } from "react";
  * - handleInsertNode(folderId, name, isFolder)
  * - handleDeleteNode(nodeId)
  * - handleRenameNode(nodeId, newName)
- *
- * Example usage in parent:
- * <Folder
- *   explorer={root}
- *   parent={null}
- *   handleInsertNode={handleInsertNode}
- *   handleDeleteNode={handleDeleteNode}
- *   handleRenameNode={handleRenameNode}
- * />
  */
 function Folder({
   explorer,
@@ -28,7 +19,7 @@ function Folder({
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  // show create input (for adding file/folder)
+  // create input state
   const [showCreateInput, setShowCreateInput] = useState({
     visible: false,
     isFolder: false
@@ -36,7 +27,7 @@ function Folder({
   const [createValue, setCreateValue] = useState("");
   const [createError, setCreateError] = useState("");
 
-  // renaming state
+  // rename state
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(explorer.name);
   const [renameError, setRenameError] = useState("");
@@ -46,27 +37,44 @@ function Folder({
     setRenameValue(explorer.name);
   }, [explorer.name]);
 
-  // Helpers: check duplicates among items in this folder (for create)
-  const isDuplicateInThisFolder = (name) => {
-    const normalized = name.trim().toLowerCase();
-    if (!explorer.items || !explorer.items.length) return false;
-    return explorer.items.some((it) => it.name.trim().toLowerCase() === normalized);
+  // ---------- Sorting: folders first, then files; both alphabetically (case-insensitive)
+  const getSortedChildren = () => {
+    if (!Array.isArray(explorer.items)) return [];
+
+    // make shallow copy to avoid mutating original
+    const list = [...explorer.items];
+
+    list.sort((a, b) => {
+      // folders should come before files
+      if (a.isFolder === b.isFolder) {
+        // same type -> sort alphabetically, case-insensitive
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      }
+      return a.isFolder ? -1 : 1; // folder first
+    });
+
+    return list;
   };
 
-  // Helpers: check duplicate among siblings (for rename)
+  const sortedChildren = getSortedChildren();
+
+  // ---------- Duplicate checks
+  const isDuplicateInThisFolder = (name) => {
+    const normalized = name.trim().toLowerCase();
+    if (!sortedChildren.length) return false;
+    return sortedChildren.some((it) => it.name.trim().toLowerCase() === normalized);
+  };
+
   const isDuplicateAmongSiblings = (name) => {
     const normalized = name.trim().toLowerCase();
-
-    // if parent is provided, check parent's items
     const siblings = parent?.items ?? [];
     if (!siblings.length) return false;
-
     return siblings.some(
       (it) => it.id !== explorer.id && it.name.trim().toLowerCase() === normalized
     );
   };
 
-  // Create (handle Enter in create input)
+  // ---------- Create handlers
   const onCreateKeyDown = (e) => {
     if (e.key === "Enter") {
       const value = (createValue || "").trim();
@@ -75,30 +83,24 @@ function Folder({
         return;
       }
 
-      // validate duplicates in this folder
       if (isDuplicateInThisFolder(value)) {
         setCreateError("An item with this name already exists in this folder");
         return;
       }
 
-      // passed validation
       setCreateError("");
       handleInsertNode(explorer.id, value, showCreateInput.isFolder);
 
-      // reset create input
       setCreateValue("");
       setShowCreateInput({ ...showCreateInput, visible: false });
-      // keep folder open after creating
       setExpanded(true);
     } else if (e.key === "Escape") {
       setCreateValue("");
       setCreateError("");
       setShowCreateInput({ ...showCreateInput, visible: false });
     }
-    // otherwise ignore
   };
 
-  // Start create (Folder or File)
   const startCreate = (e, isFolder) => {
     e.stopPropagation();
     setExpanded(true);
@@ -107,13 +109,12 @@ function Folder({
     setCreateError("");
   };
 
-  // Rename handling
+  // ---------- Rename handlers
   const startRename = (e) => {
     e.stopPropagation();
     setIsRenaming(true);
     setRenameValue(explorer.name);
     setRenameError("");
-    // keep parent folder open for visibility
     if (explorer.isFolder) setExpanded(true);
   };
 
@@ -125,18 +126,15 @@ function Folder({
         return;
       }
 
-      // check duplicate at same level (siblings)
       if (isDuplicateAmongSiblings(newName)) {
         setRenameError("Another item with this name already exists");
         return;
       }
 
-      // If renaming a folder and also want to check children? typically not necessary.
       setRenameError("");
       handleRenameNode(explorer.id, newName);
       setIsRenaming(false);
     } else if (e.key === "Escape") {
-      // cancel
       setIsRenaming(false);
       setRenameValue(explorer.name);
       setRenameError("");
@@ -144,21 +142,20 @@ function Folder({
   };
 
   const onRenameBlur = () => {
-    // choose to cancel rename on blur (consistent with earlier notes)
     setIsRenaming(false);
     setRenameValue(explorer.name);
     setRenameError("");
   };
 
+  // ---------- Delete handler
   const handleDeleteClick = (e) => {
     e.stopPropagation();
-    // optional: put a confirm prompt here if you want
     const confirmed = window.confirm(`Delete "${explorer.name}"?`);
     if (!confirmed) return;
     handleDeleteNode(explorer.id);
   };
 
-  // Render folder node
+  // ---------- Render
   if (explorer.isFolder) {
     return (
       <div style={{ marginTop: 6 }}>
@@ -254,7 +251,6 @@ function Folder({
                   onChange={(e) => setCreateValue(e.target.value)}
                   onKeyDown={onCreateKeyDown}
                   onBlur={() => {
-                    // cancel create on blur
                     setShowCreateInput({ ...showCreateInput, visible: false });
                     setCreateError("");
                   }}
@@ -271,24 +267,23 @@ function Folder({
             </div>
           )}
 
-          {/* children */}
-          {Array.isArray(explorer.items) &&
-            explorer.items.map((child) => (
-              <Folder
-                key={child.id}
-                explorer={child}
-                parent={explorer} // pass parent for sibling checks
-                handleInsertNode={handleInsertNode}
-                handleDeleteNode={handleDeleteNode}
-                handleRenameNode={handleRenameNode}
-              />
-            ))}
+          {/* children: using sortedChildren (folders first) */}
+          {sortedChildren.map((child) => (
+            <Folder
+              key={child.id}
+              explorer={child}
+              parent={explorer} // pass parent for sibling checks
+              handleInsertNode={handleInsertNode}
+              handleDeleteNode={handleDeleteNode}
+              handleRenameNode={handleRenameNode}
+            />
+          ))}
         </div>
       </div>
     );
   }
 
-  // Render file node
+  // File node
   return (
     <div
       className="fileRow"
